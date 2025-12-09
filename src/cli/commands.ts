@@ -48,7 +48,24 @@ interface CLIOptions {
   log?: boolean;  // commander uses 'log' for --no-log (negated)
 }
 
+const VALID_SCENARIO_TYPES = ['ethical_dilemma', 'neighborhood_chaos', 'demon_scheme', 'social_gathering', 'character_study'] as const;
+
 async function runSimulation(options: CLIOptions): Promise<void> {
+  // Validate API key early (skip for --list commands)
+  if (!options.list && !process.env.ANTHROPIC_API_KEY) {
+    streamer.printError('Missing ANTHROPIC_API_KEY environment variable');
+    streamer.printInfo('Copy .env.example to .env and add your API key');
+    streamer.printInfo('Get your key at: https://console.anthropic.com');
+    return;
+  }
+
+  // Validate scenario type if provided
+  if (options.type && !VALID_SCENARIO_TYPES.includes(options.type as any)) {
+    streamer.printError(`Invalid scenario type: ${options.type}`);
+    streamer.printInfo(`Valid types: ${VALID_SCENARIO_TYPES.join(', ')}`);
+    return;
+  }
+
   // Load all characters
   const charactersDir = resolve(PROJECT_ROOT, 'characters');
   const allCharacters = loadAllCharacters(charactersDir);
@@ -87,14 +104,19 @@ async function runSimulation(options: CLIOptions): Promise<void> {
   if (options.generate) {
     streamer.printInfo('Generating a new scenario...');
     const characterNames = allCharacters.map(c => c.shortName);
-    scenario = await generateScenario(
-      {
-        type: options.type as ScenarioType | undefined,
-        characters: options.characters?.split(',').map(s => s.trim()),
-      },
-      characterNames
-    );
-    streamer.printInfo(`Generated: ${scenario.name}`);
+    try {
+      scenario = await generateScenario(
+        {
+          type: options.type as ScenarioType | undefined,
+          characters: options.characters?.split(',').map(s => s.trim()),
+        },
+        characterNames
+      );
+      streamer.printInfo(`Generated: ${scenario.name}`);
+    } catch (error) {
+      streamer.printError(`Failed to generate scenario: ${(error as Error).message}`);
+      return;
+    }
   } else if (options.scenario) {
     const scenariosDir = resolve(PROJECT_ROOT, 'scenarios');
     const fileScenarios = loadAllScenarios(scenariosDir);
