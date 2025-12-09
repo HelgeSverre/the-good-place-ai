@@ -1,9 +1,8 @@
 import { writeFileSync, appendFileSync, mkdirSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..');
+// Use CWD so compiled binary writes logs relative to where it's run
+const PROJECT_ROOT = process.cwd();
 
 export interface LogWriterOptions {
   scenarioName: string;

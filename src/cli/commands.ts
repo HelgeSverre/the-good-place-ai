@@ -1,6 +1,5 @@
 import { Command } from 'commander';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { resolve } from 'path';
 import { loadAllCharacters, getCharacterByName } from '../characters/loader.js';
 import { loadAllScenarios, getScenarioById, getRandomScenario } from '../scenarios/loader.js';
 import { generateScenario, BUILTIN_SCENARIOS } from '../scenarios/generator.js';
@@ -10,8 +9,8 @@ import type { ScenarioContext } from '../agents/orchestrator.js';
 import type { CharacterSheet } from '../characters/types.js';
 import type { Scenario, ScenarioType } from '../scenarios/types.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = resolve(__dirname, '..', '..');
+// Use CWD so compiled binary finds assets relative to where it's run
+const PROJECT_ROOT = process.cwd();
 
 export function createCLI(): Command {
   const program = new Command();
