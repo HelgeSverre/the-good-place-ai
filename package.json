@@ -1,0 +1,36 @@
+{
+  "name": "the-good-place-ai",
+  "version": "1.0.0",
+  "description": "AI simulator for The Good Place characters using Claude Agent SDK",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "the-good-place": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  },
+  "keywords": [
+    "ai",
+    "claude",
+    "the-good-place",
+    "simulator",
+    "agents"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "gray-matter": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
