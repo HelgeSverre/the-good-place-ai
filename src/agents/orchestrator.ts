@@ -83,14 +83,12 @@ Begin by setting the scene, then choose who speaks first.`;
   };
 }
 
-export function parseOrchestratorOutput(output: string): {
-  type: 'scene' | 'next' | 'end';
-  content: string;
-  speaker?: string;
-  context?: string;
-  button?: string;
-  summary?: string;
-} {
+export type ParsedOrchestrator =
+  | { type: 'scene'; content: string }
+  | { type: 'next'; content: string; speaker: string; context?: string }
+  | { type: 'end'; content: string; button?: string; summary?: string };
+
+export function parseOrchestratorOutput(output: string): ParsedOrchestrator {
   const lines = output.trim().split('\n');
 
   // Check for scene end
