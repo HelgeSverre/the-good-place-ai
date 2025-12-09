@@ -69,6 +69,20 @@ npm start -- --list characters
 npm start -- --list scenarios
 ```
 
+### Compiled Binary
+
+For a cleaner experience without `npm start --`, compile a standalone binary:
+
+```bash
+# Compile the binary (requires Bun)
+bun run compile
+
+# Run directly
+./the-good-place --scenario trolley-problem-redux
+./the-good-place --generate --type demon_scheme
+./the-good-place --characters "Eleanor,Jason,Bad Janet"
+```
+
 ## 📖 CLI Options
 
 | Option | Description |
@@ -80,12 +94,27 @@ npm start -- --list scenarios
 | `-m, --max-turns <number>` | Max conversation turns (default: 30) |
 | `-v, --verbose` | Show debug output for nerds |
 | `-l, --list <type>` | List `characters` or `scenarios` |
+| `--no-log` | Disable saving conversation to log file |
 
 ## 🎬 Available Scenarios
 
-- **trolley-problem-redux** — Chidi faces a REAL trolley problem. Stomach aches ensue.
-- **janets-dinner-party** — Janet hosts a party. What could go wrong?
-- **shawns-audit** — The demons are checking in. Everyone act natural.
+| Scenario | Description |
+|----------|-------------|
+| `trolley-problem-redux` | Chidi faces a REAL trolley problem. Stomach aches ensue. |
+| `janets-dinner-party` | Janet hosts a party. What could go wrong? |
+| `shawns-audit` | The demons are checking in. Everyone act natural. |
+| `algorithm-update` | The point system gets an update. |
+| `jasons-philosophy-class` | Jason teaches philosophy. Bortles! |
+| `tahanis-humble-party` | Tahani throws a "humble" gathering. |
+| `simulation-within-simulation` | Things get meta. |
+| `mindys-visitors` | A trip to the Medium Place. |
+| `bad-janet-goes-good` | Bad Janet's redemption arc? |
+| `ethics-of-rebooting` | Is rebooting people ethical? |
+| `shawns-performance-review` | Demon HR is rough. |
+| `the-support-group` | Group therapy, afterlife style. |
+| `janets-day-off` | What does Janet do for fun? |
+| `the-point-audit` | The accountants are here. |
+| `dereks-origin-story` | Maximum Derek. |
 
 ## 🛠 Project Structure
 
@@ -104,6 +133,19 @@ the-good-place-ai/
 │   ├── cli/             # Command-line interface
 │   └── utils/           # Helpers and such
 └── package.json
+```
+
+## 🧪 Testing
+
+```bash
+# Run tests
+npm test
+
+# Watch mode
+npm run test:watch
+
+# Type checking
+npm run typecheck
 ```
 
 ## ✨ Creating Custom Characters
