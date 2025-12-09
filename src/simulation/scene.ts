@@ -11,6 +11,8 @@ export interface SceneOptions {
   maxTurns?: number;
   verbose?: boolean;
   noLog?: boolean;
+  maxHistoryMessages?: number;
+  maxCharacterHistoryMessages?: number;
 }
 
 export class SceneExecutor {
@@ -23,6 +25,8 @@ export class SceneExecutor {
   private verbose: boolean;
   private logWriter: LogWriter | null = null;
   private scenarioContext: ScenarioContext;
+  private maxHistoryMessages: number;
+  private maxCharacterHistoryMessages: number;
 
   constructor(
     characters: CharacterSheet[],
@@ -34,6 +38,8 @@ export class SceneExecutor {
     this.orchestratorAgent = createOrchestratorAgent(scenario);
     this.verbose = options.verbose || false;
     this.scenarioContext = scenario;
+    this.maxHistoryMessages = options.maxHistoryMessages ?? 20;
+    this.maxCharacterHistoryMessages = options.maxCharacterHistoryMessages ?? 16;
 
     // Initialize character histories
     for (const name of this.characterAgents.keys()) {
@@ -58,58 +64,71 @@ export class SceneExecutor {
     let sceneSummary: string | undefined;
 
     // Get initial scene setup from orchestrator
-    const initialOutput = await this.getOrchestratorResponse('Begin the scene. Set it up and choose who speaks first.');
-    const initialParsed = parseOrchestratorOutput(initialOutput);
+    try {
+      const initialOutput = await this.getOrchestratorResponse('Begin the scene. Set it up and choose who speaks first.');
+      const initialParsed = parseOrchestratorOutput(initialOutput);
 
-    if (initialParsed.type === 'scene') {
-      streamer.printSceneDirection(initialParsed.content);
-      this.logWriter?.logSceneDirection(initialParsed.content);
-    }
+      if (initialParsed.type === 'scene') {
+        streamer.printSceneDirection(initialParsed.content);
+        this.logWriter?.logSceneDirection(initialParsed.content);
+      }
 
-    // If orchestrator immediately chose a speaker, handle that
-    if (initialParsed.speaker) {
-      await this.handleCharacterTurn(initialParsed.speaker, initialParsed.context || 'Start the conversation');
-      turnCount++;
+      // If orchestrator immediately chose a speaker, handle that
+      if (initialParsed.type === 'next') {
+        await this.handleCharacterTurn(initialParsed.speaker, initialParsed.context || 'Start the conversation');
+        turnCount++;
+      }
+    } catch (error) {
+      streamer.printError(`Failed to start scene: ${(error as Error).message}`);
+      return;
     }
 
     // Main scene loop
     while (!sceneEnded && turnCount < maxTurns) {
-      // Ask orchestrator what happens next
-      const recentContext = this.getRecentDialogueContext();
-      const orchestratorOutput = await this.getOrchestratorResponse(
-        `Here's what just happened:\n${recentContext}\n\nWhat happens next?`
-      );
+      try {
+        // Ask orchestrator what happens next
+        const recentContext = this.getRecentDialogueContext();
+        const orchestratorOutput = await this.getOrchestratorResponse(
+          `Here's what just happened:\n${recentContext}\n\nWhat happens next?`
+        );
 
-      const parsed = parseOrchestratorOutput(orchestratorOutput);
+        const parsed = parseOrchestratorOutput(orchestratorOutput);
 
-      if (parsed.type === 'end') {
-        streamer.printSceneEnd(parsed.button, parsed.summary);
-        sceneSummary = parsed.summary;
-        sceneEnded = true;
-        break;
-      }
-
-      if (parsed.type === 'scene') {
-        streamer.printSceneDirection(parsed.content);
-        this.logWriter?.logSceneDirection(parsed.content);
-        // Continue to get next speaker
-        const nextOutput = await this.getOrchestratorResponse('Who speaks next?');
-        const nextParsed = parseOrchestratorOutput(nextOutput);
-        if (nextParsed.speaker) {
-          await this.handleCharacterTurn(nextParsed.speaker, nextParsed.context || '');
-          turnCount++;
-        } else if (nextParsed.type === 'end') {
-          streamer.printSceneEnd(nextParsed.button, nextParsed.summary);
-          sceneSummary = nextParsed.summary;
+        if (parsed.type === 'end') {
+          streamer.printSceneEnd(parsed.button, parsed.summary);
+          sceneSummary = parsed.summary;
           sceneEnded = true;
+          break;
         }
-      } else if (parsed.speaker) {
-        await this.handleCharacterTurn(parsed.speaker, parsed.context || '');
-        turnCount++;
-      }
 
-      // Small delay for readability
-      await this.delay(100);
+        if (parsed.type === 'scene') {
+          streamer.printSceneDirection(parsed.content);
+          this.logWriter?.logSceneDirection(parsed.content);
+          // Continue to get next speaker
+          const nextOutput = await this.getOrchestratorResponse('Who speaks next?');
+          const nextParsed = parseOrchestratorOutput(nextOutput);
+          if (nextParsed.type === 'next') {
+            await this.handleCharacterTurn(nextParsed.speaker, nextParsed.context || '');
+            turnCount++;
+          } else if (nextParsed.type === 'end') {
+            streamer.printSceneEnd(nextParsed.button, nextParsed.summary);
+            sceneSummary = nextParsed.summary;
+            sceneEnded = true;
+          }
+        } else if (parsed.type === 'next') {
+          await this.handleCharacterTurn(parsed.speaker, parsed.context || '');
+          turnCount++;
+        }
+
+        // Small delay for readability
+        await this.delay(100);
+      } catch (error) {
+        streamer.printError(`Scene error: ${(error as Error).message}`);
+        if (this.verbose) {
+          console.error(error);
+        }
+        sceneEnded = true;
+      }
     }
 
     if (!sceneEnded) {
@@ -150,67 +169,122 @@ export class SceneExecutor {
     // Add user message to history
     history.push({ role: 'user', content: prompt });
 
-    // Buffer the response for formatted output
-    streamer.startCharacterTurn(characterName);
+    try {
+      const fullResponse = await this.generateCharacterLine(agent, history);
+
+      // Clean up the full response - remove character name prefix if present
+      const cleanedResponse = fullResponse.replace(new RegExp(`^${characterName}:\\s*`, 'i'), '').trim();
+
+      // Parse and display formatted output
+      const parsed = parseDialogue(cleanedResponse, characterName);
+      streamer.printFormattedDialogue(characterName, parsed);
+
+      // Log to file
+      if (this.logWriter) {
+        const action = getCombinedAction(parsed);
+        this.logWriter.logDialogue(characterName, action, parsed.dialogue);
+      }
+
+      // Add assistant response to history
+      history.push({ role: 'assistant', content: cleanedResponse });
+
+      // Trim history to max size
+      if (history.length > this.maxCharacterHistoryMessages) {
+        history.splice(0, history.length - this.maxCharacterHistoryMessages);
+      }
+      this.characterHistories.set(characterName, history);
+
+      // Track dialogue
+      this.recentDialogue.push({
+        character: characterName,
+        dialogue: cleanedResponse,
+      });
+
+      // Keep only last 10 turns
+      if (this.recentDialogue.length > 10) {
+        this.recentDialogue.shift();
+      }
+    } catch (error) {
+      streamer.printError(`${characterName} glitched: ${(error as Error).message}`);
+
+      // Add an in-universe glitch message to keep the scene going
+      this.recentDialogue.push({
+        character: characterName,
+        dialogue: `[${characterName} stares blankly into the void for a moment, then snaps back]`,
+      });
+    }
+  }
+
+  private async generateCharacterLine(
+    agent: AgentConfig,
+    history: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): Promise<string> {
+    streamer.startCharacterTurn(agent.name);
 
     let fullResponse = '';
+    let lastError: unknown;
 
-    const stream = await this.client.messages.stream({
-      model: agent.model,
-      max_tokens: 300,
-      system: agent.systemPrompt,
-      messages: history,
-    });
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      try {
+        fullResponse = '';
+        const stream = this.client.messages.stream({
+          model: agent.model,
+          max_tokens: 300,
+          system: agent.systemPrompt,
+          messages: history,
+        });
 
-    for await (const event of stream) {
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        const text = event.delta.text;
-        fullResponse += text;
-        streamer.bufferText(text);
+        for await (const event of stream) {
+          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+            const text = event.delta.text;
+            fullResponse += text;
+            streamer.bufferText(text);
+          }
+        }
+
+        return fullResponse;
+      } catch (err) {
+        lastError = err;
+        const status = (err as any)?.status;
+        const isRateLimit = status === 429;
+        const delayMs = isRateLimit ? 1000 * (attempt + 1) : 500 * attempt;
+
+        if (this.verbose) {
+          streamer.printError(`[character:${agent.name}] attempt ${attempt + 1} failed: ${(err as Error).message}`);
+        }
+
+        if (attempt < 2) {
+          await this.delay(delayMs);
+        }
       }
     }
 
-    // Clean up the full response - remove character name prefix if present
-    fullResponse = fullResponse.replace(new RegExp(`^${characterName}:\\s*`, 'i'), '').trim();
-
-    // Parse and display formatted output
-    const parsed = parseDialogue(fullResponse, characterName);
-    streamer.printFormattedDialogue(characterName, parsed);
-
-    // Log to file
-    if (this.logWriter) {
-      const action = getCombinedAction(parsed);
-      this.logWriter.logDialogue(characterName, action, parsed.dialogue);
-    }
-
-    // Add assistant response to history
-    history.push({ role: 'assistant', content: fullResponse });
-    this.characterHistories.set(characterName, history);
-
-    // Track dialogue
-    this.recentDialogue.push({
-      character: characterName,
-      dialogue: fullResponse,
-    });
-
-    // Keep only last 10 turns
-    if (this.recentDialogue.length > 10) {
-      this.recentDialogue.shift();
-    }
+    throw new Error(`[character:${agent.name}] failed after 3 attempts: ${(lastError as Error).message}`);
   }
 
   private async getOrchestratorResponse(prompt: string): Promise<string> {
     this.conversationHistory.push({ role: 'user', content: prompt });
 
-    const response = await this.client.messages.create({
-      model: this.orchestratorAgent.model,
-      max_tokens: 500,
-      system: this.orchestratorAgent.systemPrompt,
-      messages: this.conversationHistory,
-    });
+    // Trim history to max size
+    if (this.conversationHistory.length > this.maxHistoryMessages) {
+      this.conversationHistory.splice(0, this.conversationHistory.length - this.maxHistoryMessages);
+    }
 
-    const content = response.content[0];
-    const text = content.type === 'text' ? content.text : '';
+    const response = await this.callAnthropicWithRetry(
+      () => this.client.messages.create({
+        model: this.orchestratorAgent.model,
+        max_tokens: 500,
+        system: this.orchestratorAgent.systemPrompt,
+        messages: this.conversationHistory,
+      }),
+      'orchestrator'
+    );
+
+    const first = response.content[0];
+    if (!first || first.type !== 'text') {
+      throw new Error('Unexpected Anthropic response format (expected text content)');
+    }
+    const text = first.text;
 
     this.conversationHistory.push({ role: 'assistant', content: text });
 
@@ -219,6 +293,35 @@ export class SceneExecutor {
     }
 
     return text;
+  }
+
+  private async callAnthropicWithRetry<T>(
+    fn: () => Promise<T>,
+    label: string,
+    retries = 2
+  ): Promise<T> {
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastError = err;
+        const status = (err as any)?.status;
+        const isRateLimit = status === 429;
+        const delayMs = isRateLimit ? 1000 * (attempt + 1) : 500 * attempt;
+
+        if (this.verbose) {
+          streamer.printError(`[${label}] attempt ${attempt + 1} failed: ${(err as Error).message}`);
+        }
+
+        if (attempt < retries) {
+          await this.delay(delayMs);
+        }
+      }
+    }
+
+    throw new Error(`[${label}] failed after ${retries + 1} attempts: ${(lastError as Error).message}`);
   }
 
   private getRecentDialogueContext(): string {
