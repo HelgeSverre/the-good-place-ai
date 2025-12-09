@@ -29,6 +29,7 @@ export function createCLI(): Command {
     .option('-m, --max-turns <number>', 'Maximum conversation turns', '30')
     .option('-v, --verbose', 'Show detailed debug output')
     .option('-l, --list <type>', 'List available scenarios or characters')
+    .option('--no-log', 'Disable saving conversation log to file')
     .action(async (options) => {
       await runSimulation(options);
     });
@@ -44,6 +45,7 @@ interface CLIOptions {
   maxTurns?: string;
   verbose?: boolean;
   list?: string;
+  log?: boolean;  // commander uses 'log' for --no-log (negated)
 }
 
 async function runSimulation(options: CLIOptions): Promise<void> {
@@ -170,6 +172,7 @@ async function runSimulation(options: CLIOptions): Promise<void> {
   const executor = new SceneExecutor(selectedCharacters, scenarioContext, {
     maxTurns,
     verbose: options.verbose,
+    noLog: options.log === false,  // --no-log sets log to false
   });
 
   try {

@@ -7,6 +7,7 @@ export const CHARACTER_COLORS: Record<string, string> = {
   Janet: '#1ABC9C',
   Shawn: '#E74C3C',
   'Bad Janet': '#7F8C8D',
+  Mindy: '#DAA520',
   Director: '#95A5A6',
 };
 
