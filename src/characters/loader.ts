@@ -63,7 +63,7 @@ function parsePointTable(markdown: string): PointAction[] {
 
   for (const line of lines) {
     // Parse markdown table rows: | Action | Points |
-    const tableMatch = line.match(/\|\s*(.+?)\s*\|\s*(-?\d+)\s*\|/);
+    const tableMatch = line.match(/\|\s*(.+?)\s*\|\s*([+-]?\d+)\s*\|/);
     if (tableMatch && !tableMatch[1].includes('---') && !tableMatch[1].toLowerCase().includes('action')) {
       actions.push({
         action: tableMatch[1].trim(),
