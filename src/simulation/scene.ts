@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { streamer } from './dialogue-stream.js';
+import { LogWriter } from './log-writer.js';
+import { parseDialogue, getCombinedAction } from './dialogue-formatter.js';
 import { createCharacterAgents } from '../agents/character-factory.js';
 import { createOrchestratorAgent, parseOrchestratorOutput, type ScenarioContext } from '../agents/orchestrator.js';
 import type { CharacterSheet } from '../characters/types.js';
@@ -8,6 +10,7 @@ import type { AgentConfig, DialogueTurn } from '../agents/types.js';
 export interface SceneOptions {
   maxTurns?: number;
   verbose?: boolean;
+  noLog?: boolean;
 }
 
 export class SceneExecutor {
@@ -18,6 +21,8 @@ export class SceneExecutor {
   private characterHistories: Map<string, Array<{ role: 'user' | 'assistant'; content: string }>> = new Map();
   private recentDialogue: DialogueTurn[] = [];
   private verbose: boolean;
+  private logWriter: LogWriter | null = null;
+  private scenarioContext: ScenarioContext;
 
   constructor(
     characters: CharacterSheet[],
@@ -28,18 +33,29 @@ export class SceneExecutor {
     this.characterAgents = createCharacterAgents(characters);
     this.orchestratorAgent = createOrchestratorAgent(scenario);
     this.verbose = options.verbose || false;
+    this.scenarioContext = scenario;
 
     // Initialize character histories
     for (const name of this.characterAgents.keys()) {
       this.characterHistories.set(name, []);
     }
+
+    // Initialize log writer unless disabled
+    if (!options.noLog) {
+      this.logWriter = new LogWriter({
+        scenarioName: scenario.name,
+        characters: scenario.characters,
+      });
+    }
   }
 
   async runScene(maxTurns: number = 30): Promise<void> {
-    streamer.printTitle(this.orchestratorAgent.systemPrompt.match(/\*\*Title:\*\* (.+)/)?.[1] || 'Scene');
+    const title = this.orchestratorAgent.systemPrompt.match(/\*\*Title:\*\* (.+)/)?.[1] || 'Scene';
+    streamer.printTitle(title);
 
     let turnCount = 0;
     let sceneEnded = false;
+    let sceneSummary: string | undefined;
 
     // Get initial scene setup from orchestrator
     const initialOutput = await this.getOrchestratorResponse('Begin the scene. Set it up and choose who speaks first.');
@@ -47,6 +63,7 @@ export class SceneExecutor {
 
     if (initialParsed.type === 'scene') {
       streamer.printSceneDirection(initialParsed.content);
+      this.logWriter?.logSceneDirection(initialParsed.content);
     }
 
     // If orchestrator immediately chose a speaker, handle that
@@ -67,12 +84,14 @@ export class SceneExecutor {
 
       if (parsed.type === 'end') {
         streamer.printSceneEnd(parsed.button, parsed.summary);
+        sceneSummary = parsed.summary;
         sceneEnded = true;
         break;
       }
 
       if (parsed.type === 'scene') {
         streamer.printSceneDirection(parsed.content);
+        this.logWriter?.logSceneDirection(parsed.content);
         // Continue to get next speaker
         const nextOutput = await this.getOrchestratorResponse('Who speaks next?');
         const nextParsed = parseOrchestratorOutput(nextOutput);
@@ -81,6 +100,7 @@ export class SceneExecutor {
           turnCount++;
         } else if (nextParsed.type === 'end') {
           streamer.printSceneEnd(nextParsed.button, nextParsed.summary);
+          sceneSummary = nextParsed.summary;
           sceneEnded = true;
         }
       } else if (parsed.speaker) {
@@ -94,6 +114,12 @@ export class SceneExecutor {
 
     if (!sceneEnded) {
       streamer.printSceneEnd(undefined, 'Scene ended (maximum turns reached)');
+    }
+
+    // Finalize log
+    if (this.logWriter) {
+      this.logWriter.finalize(sceneSummary);
+      streamer.printSuccess(`Log saved to: ${this.logWriter.getFilePath()}`);
     }
   }
 
@@ -124,8 +150,8 @@ export class SceneExecutor {
     // Add user message to history
     history.push({ role: 'user', content: prompt });
 
-    // Stream the character's response
-    streamer.printCharacterName(characterName);
+    // Buffer the response for formatted output
+    streamer.startCharacterTurn(characterName);
 
     let fullResponse = '';
 
@@ -139,17 +165,23 @@ export class SceneExecutor {
     for await (const event of stream) {
       if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
         const text = event.delta.text;
-        // Clean up the response - remove the character name prefix if present
-        const cleanedText = text.replace(new RegExp(`^${characterName}:\\s*`, 'i'), '');
-        streamer.streamCharacterText(characterName, cleanedText);
-        fullResponse += cleanedText;
+        fullResponse += text;
+        streamer.bufferText(text);
       }
     }
 
-    streamer.endCharacterLine();
-
-    // Clean up the full response
+    // Clean up the full response - remove character name prefix if present
     fullResponse = fullResponse.replace(new RegExp(`^${characterName}:\\s*`, 'i'), '').trim();
+
+    // Parse and display formatted output
+    const parsed = parseDialogue(fullResponse, characterName);
+    streamer.printFormattedDialogue(characterName, parsed);
+
+    // Log to file
+    if (this.logWriter) {
+      const action = getCombinedAction(parsed);
+      this.logWriter.logDialogue(characterName, action, parsed.dialogue);
+    }
 
     // Add assistant response to history
     history.push({ role: 'assistant', content: fullResponse });
