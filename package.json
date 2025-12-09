@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "compile": "bun build src/index.ts --compile --outfile the-good-place",
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
