@@ -69,6 +69,23 @@ npm start -- --list characters
 npm start -- --list scenarios
 ```
 
+### Web Interface
+
+For a more visual experience, launch the web interface:
+
+```bash
+# Start the web server
+bun run dev:web
+```
+
+Then open [http://localhost:3000](http://localhost:3000) in your browser. The web interface features:
+
+- Browse and select from available scenarios
+- See the full character roster with their signature colors
+- **Play/Pause/Stop** controls to watch scenes unfold at your pace
+- Real-time streaming dialogue via WebSockets
+- Themed Good Place aesthetic with cloud backgrounds
+
 ### Compiled Binary
 
 For a cleaner experience without `npm start --`, compile a standalone binary:
@@ -132,17 +149,28 @@ the-good-place-ai/
 │   ├── simulation/      # The actual scene execution
 │   ├── cli/             # Command-line interface
 │   └── utils/           # Helpers and such
+├── web/                 # Web interface (Bun + React)
+│   ├── server.ts        # Bun.serve() entry point
+│   ├── api/             # REST routes & WebSocket handlers
+│   ├── client/          # React frontend
+│   └── shared/          # Shared types
+├── tests/               # Test suites
+│   ├── unit/            # Unit tests (vitest)
+│   └── e2e/             # End-to-end tests (playwright)
 └── package.json
 ```
 
 ## 🧪 Testing
 
 ```bash
-# Run tests
+# Run unit tests
 npm test
 
 # Watch mode
 npm run test:watch
+
+# Run end-to-end tests (web interface)
+npm run test:e2e
 
 # Type checking
 npm run typecheck

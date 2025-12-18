@@ -6,3 +6,4 @@ dist/
 logs/*
 the-good-place
 IMPROVEMENTS.md
+test-results/
