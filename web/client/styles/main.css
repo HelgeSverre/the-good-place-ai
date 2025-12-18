@@ -1,0 +1,229 @@
+@import "tailwindcss";
+
+/* Tell Tailwind where to scan for utility classes */
+@source "../";
+@source "../../";
+
+/* Custom theme variables */
+:root {
+  /* Good Place sky colors */
+  --gp-sky-100: #E6F3FF;
+  --gp-sky-200: #B3DAFF;
+  --gp-sky-300: #80C1FF;
+  --gp-sky-400: #4DA8FF;
+  --gp-sky-500: #1A8FFF;
+
+  /* Accent colors */
+  --gp-gold: #FFD700;
+  --gp-gold-dark: #E5C100;
+  --gp-froyo: #FFB6C1;
+  --gp-cloud: #FFFFFF;
+
+  /* Character colors */
+  --character-eleanor: #FF6B6B;
+  --character-chidi: #4ECDC4;
+  --character-tahani: #9B59B6;
+  --character-jason: #F39C12;
+  --character-michael: #3498DB;
+  --character-janet: #1ABC9C;
+  --character-shawn: #E74C3C;
+  --character-bad-janet: #7F8C8D;
+  --character-mindy: #DAA520;
+  --character-derek: #FF69B4;
+}
+
+/* Base styles */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: linear-gradient(180deg, var(--gp-sky-100) 0%, var(--gp-sky-200) 50%, var(--gp-sky-300) 100%);
+  min-height: 100vh;
+}
+
+/* Typography */
+.font-display {
+  font-family: 'Playfair Display', serif;
+}
+
+/* Animations */
+@keyframes float {
+  0%, 100% { transform: translateX(-5%) translateY(0); }
+  50% { transform: translateX(5%) translateY(-10px); }
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateX(0) translateY(0); }
+  50% { transform: translateX(3%) translateY(-5px); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 5px currentColor; }
+  50% { box-shadow: 0 0 20px currentColor; }
+}
+
+.animate-float {
+  animation: float 20s ease-in-out infinite;
+}
+
+.animate-float-slow {
+  animation: float-slow 30s ease-in-out infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Cloud background */
+.cloud {
+  position: absolute;
+  background: radial-gradient(ellipse at center, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.6) 50%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Character color utilities */
+.border-character-eleanor { border-color: var(--character-eleanor); }
+.border-character-chidi { border-color: var(--character-chidi); }
+.border-character-tahani { border-color: var(--character-tahani); }
+.border-character-jason { border-color: var(--character-jason); }
+.border-character-michael { border-color: var(--character-michael); }
+.border-character-janet { border-color: var(--character-janet); }
+.border-character-shawn { border-color: var(--character-shawn); }
+.border-character-bad-janet { border-color: var(--character-bad-janet); }
+.border-character-mindy { border-color: var(--character-mindy); }
+.border-character-derek { border-color: var(--character-derek); }
+
+.text-character-eleanor { color: var(--character-eleanor); }
+.text-character-chidi { color: var(--character-chidi); }
+.text-character-tahani { color: var(--character-tahani); }
+.text-character-jason { color: var(--character-jason); }
+.text-character-michael { color: var(--character-michael); }
+.text-character-janet { color: var(--character-janet); }
+.text-character-shawn { color: var(--character-shawn); }
+.text-character-bad-janet { color: var(--character-bad-janet); }
+.text-character-mindy { color: var(--character-mindy); }
+.text-character-derek { color: var(--character-derek); }
+
+.bg-character-eleanor { background-color: var(--character-eleanor); }
+.bg-character-chidi { background-color: var(--character-chidi); }
+.bg-character-tahani { background-color: var(--character-tahani); }
+.bg-character-jason { background-color: var(--character-jason); }
+.bg-character-michael { background-color: var(--character-michael); }
+.bg-character-janet { background-color: var(--character-janet); }
+.bg-character-shawn { background-color: var(--character-shawn); }
+.bg-character-bad-janet { background-color: var(--character-bad-janet); }
+.bg-character-mindy { background-color: var(--character-mindy); }
+.bg-character-derek { background-color: var(--character-derek); }
+
+/* Dialogue card styling */
+.dialogue-card {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-left: 4px solid transparent;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dialogue-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+/* Scene direction styling */
+.scene-direction {
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 8px;
+  border: 1px dashed rgba(0, 0, 0, 0.15);
+  font-style: italic;
+  color: #666;
+}
+
+/* Control buttons */
+.control-btn {
+  padding: 10px 24px;
+  border-radius: 24px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.control-btn-primary {
+  background: linear-gradient(135deg, var(--gp-gold) 0%, var(--gp-gold-dark) 100%);
+  color: #1a1a1a;
+  box-shadow: 0 2px 8px rgba(255, 215, 0, 0.3);
+}
+
+.control-btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(255, 215, 0, 0.4);
+}
+
+.control-btn-secondary {
+  background: rgba(255, 255, 255, 0.9);
+  color: #333;
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.control-btn-secondary:hover:not(:disabled) {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+.control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Connection status indicator */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-connected {
+  background: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+}
+
+.status-disconnected {
+  background: #ef4444;
+}
+
+.status-connecting {
+  background: #f59e0b;
+  animation: pulse-glow 1s ease-in-out infinite;
+}

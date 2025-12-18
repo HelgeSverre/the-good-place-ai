@@ -1,0 +1,5 @@
+# Bun configuration for The Good Place Simulator
+
+[serve.static]
+# Enable Tailwind CSS plugin for automatic processing
+plugins = ["bun-plugin-tailwind"]
