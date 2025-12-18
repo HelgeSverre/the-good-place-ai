@@ -1,11 +1,29 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { streamer } from './dialogue-stream.js';
 import { LogWriter } from './log-writer.js';
-import { parseDialogue, getCombinedAction } from './dialogue-formatter.js';
+import { parseDialogue, getCombinedAction, type ParsedDialogue } from './dialogue-formatter.js';
 import { createCharacterAgents } from '../agents/character-factory.js';
 import { createOrchestratorAgent, parseOrchestratorOutput, type ScenarioContext } from '../agents/orchestrator.js';
+import { getCharacterColor } from '../utils/colors.js';
 import type { CharacterSheet } from '../characters/types.js';
 import type { AgentConfig, DialogueTurn } from '../agents/types.js';
+
+// Event emitter interface for web/external consumers
+export interface SceneEventEmitter {
+  onSceneStart(title: string, setting: string): void;
+  onSceneDirection(content: string): void;
+  onDialogueStart(character: string, color: string): void;
+  onDialogueChunk(text: string): void;
+  onDialogueEnd(parsed: ParsedDialogue): void;
+  onSceneEnd(summary?: string): void;
+  onError(error: Error): void;
+}
+
+// Control interface for pause/abort
+export interface SceneControl {
+  pauseSignal: { paused: boolean };
+  abortSignal: AbortSignal;
+}
 
 export interface SceneOptions {
   maxTurns?: number;
@@ -13,6 +31,9 @@ export interface SceneOptions {
   noLog?: boolean;
   maxHistoryMessages?: number;
   maxCharacterHistoryMessages?: number;
+  // Web interface support
+  emitter?: SceneEventEmitter;
+  control?: SceneControl;
 }
 
 export class SceneExecutor {
@@ -27,6 +48,9 @@ export class SceneExecutor {
   private scenarioContext: ScenarioContext;
   private maxHistoryMessages: number;
   private maxCharacterHistoryMessages: number;
+  // Web interface support
+  private emitter: SceneEventEmitter | null;
+  private control: SceneControl | null;
 
   constructor(
     characters: CharacterSheet[],
@@ -40,6 +64,8 @@ export class SceneExecutor {
     this.scenarioContext = scenario;
     this.maxHistoryMessages = options.maxHistoryMessages ?? 20;
     this.maxCharacterHistoryMessages = options.maxCharacterHistoryMessages ?? 16;
+    this.emitter = options.emitter || null;
+    this.control = options.control || null;
 
     // Initialize character histories
     for (const name of this.characterAgents.keys()) {
@@ -55,9 +81,28 @@ export class SceneExecutor {
     }
   }
 
+  // Check if we should abort
+  private isAborted(): boolean {
+    return this.control?.abortSignal.aborted || false;
+  }
+
+  // Wait while paused
+  private async waitWhilePaused(): Promise<void> {
+    while (this.control?.pauseSignal.paused && !this.isAborted()) {
+      await this.delay(100);
+    }
+  }
+
   async runScene(maxTurns: number = 30): Promise<void> {
     const title = this.orchestratorAgent.systemPrompt.match(/\*\*Title:\*\* (.+)/)?.[1] || 'Scene';
-    streamer.printTitle(title);
+    const setting = this.scenarioContext.setting || '';
+
+    // Emit scene start
+    if (this.emitter) {
+      this.emitter.onSceneStart(title, setting);
+    } else {
+      streamer.printTitle(title);
+    }
 
     let turnCount = 0;
     let sceneEnded = false;
@@ -65,11 +110,18 @@ export class SceneExecutor {
 
     // Get initial scene setup from orchestrator
     try {
+      await this.waitWhilePaused();
+      if (this.isAborted()) return;
+
       const initialOutput = await this.getOrchestratorResponse('Begin the scene. Set it up and choose who speaks first.');
       const initialParsed = parseOrchestratorOutput(initialOutput);
 
       if (initialParsed.type === 'scene') {
-        streamer.printSceneDirection(initialParsed.content);
+        if (this.emitter) {
+          this.emitter.onSceneDirection(initialParsed.content);
+        } else {
+          streamer.printSceneDirection(initialParsed.content);
+        }
         this.logWriter?.logSceneDirection(initialParsed.content);
       }
 
@@ -79,12 +131,25 @@ export class SceneExecutor {
         turnCount++;
       }
     } catch (error) {
-      streamer.printError(`Failed to start scene: ${(error as Error).message}`);
+      if (this.emitter) {
+        this.emitter.onError(error as Error);
+      } else {
+        streamer.printError(`Failed to start scene: ${(error as Error).message}`);
+      }
       return;
     }
 
     // Main scene loop
     while (!sceneEnded && turnCount < maxTurns) {
+      // Check for abort
+      if (this.isAborted()) {
+        break;
+      }
+
+      // Wait while paused
+      await this.waitWhilePaused();
+      if (this.isAborted()) break;
+
       try {
         // Ask orchestrator what happens next
         const recentContext = this.getRecentDialogueContext();
@@ -92,26 +157,44 @@ export class SceneExecutor {
           `Here's what just happened:\n${recentContext}\n\nWhat happens next?`
         );
 
+        if (this.isAborted()) break;
+
         const parsed = parseOrchestratorOutput(orchestratorOutput);
 
         if (parsed.type === 'end') {
-          streamer.printSceneEnd(parsed.button, parsed.summary);
+          if (this.emitter) {
+            this.emitter.onSceneEnd(parsed.summary);
+          } else {
+            streamer.printSceneEnd(parsed.button, parsed.summary);
+          }
           sceneSummary = parsed.summary;
           sceneEnded = true;
           break;
         }
 
         if (parsed.type === 'scene') {
-          streamer.printSceneDirection(parsed.content);
+          if (this.emitter) {
+            this.emitter.onSceneDirection(parsed.content);
+          } else {
+            streamer.printSceneDirection(parsed.content);
+          }
           this.logWriter?.logSceneDirection(parsed.content);
+
           // Continue to get next speaker
+          await this.waitWhilePaused();
+          if (this.isAborted()) break;
+
           const nextOutput = await this.getOrchestratorResponse('Who speaks next?');
           const nextParsed = parseOrchestratorOutput(nextOutput);
           if (nextParsed.type === 'next') {
             await this.handleCharacterTurn(nextParsed.speaker, nextParsed.context || '');
             turnCount++;
           } else if (nextParsed.type === 'end') {
-            streamer.printSceneEnd(nextParsed.button, nextParsed.summary);
+            if (this.emitter) {
+              this.emitter.onSceneEnd(nextParsed.summary);
+            } else {
+              streamer.printSceneEnd(nextParsed.button, nextParsed.summary);
+            }
             sceneSummary = nextParsed.summary;
             sceneEnded = true;
           }
@@ -123,26 +206,42 @@ export class SceneExecutor {
         // Small delay for readability
         await this.delay(100);
       } catch (error) {
-        streamer.printError(`Scene error: ${(error as Error).message}`);
-        if (this.verbose) {
-          console.error(error);
+        if (this.emitter) {
+          this.emitter.onError(error as Error);
+        } else {
+          streamer.printError(`Scene error: ${(error as Error).message}`);
+          if (this.verbose) {
+            console.error(error);
+          }
         }
         sceneEnded = true;
       }
     }
 
-    if (!sceneEnded) {
-      streamer.printSceneEnd(undefined, 'Scene ended (maximum turns reached)');
+    if (!sceneEnded && !this.isAborted()) {
+      const summary = 'Scene ended (maximum turns reached)';
+      if (this.emitter) {
+        this.emitter.onSceneEnd(summary);
+      } else {
+        streamer.printSceneEnd(undefined, summary);
+      }
     }
 
     // Finalize log
     if (this.logWriter) {
       this.logWriter.finalize(sceneSummary);
-      streamer.printSuccess(`Log saved to: ${this.logWriter.getFilePath()}`);
+      if (!this.emitter) {
+        streamer.printSuccess(`Log saved to: ${this.logWriter.getFilePath()}`);
+      }
     }
   }
 
   private async handleCharacterTurn(characterName: string, context: string): Promise<void> {
+    // Check for abort before starting
+    if (this.isAborted()) return;
+    await this.waitWhilePaused();
+    if (this.isAborted()) return;
+
     const agent = this.characterAgents.get(characterName);
     if (!agent) {
       // Try to find by partial match
@@ -153,7 +252,7 @@ export class SceneExecutor {
       if (found) {
         return this.handleCharacterTurn(found[0], context);
       }
-      if (this.verbose) {
+      if (this.verbose && !this.emitter) {
         streamer.printDebug(`Character not found: ${characterName}`);
       }
       return;
@@ -177,7 +276,12 @@ export class SceneExecutor {
 
       // Parse and display formatted output
       const parsed = parseDialogue(cleanedResponse, characterName);
-      streamer.printFormattedDialogue(characterName, parsed);
+
+      if (this.emitter) {
+        this.emitter.onDialogueEnd(parsed);
+      } else {
+        streamer.printFormattedDialogue(characterName, parsed);
+      }
 
       // Log to file
       if (this.logWriter) {
@@ -205,7 +309,11 @@ export class SceneExecutor {
         this.recentDialogue.shift();
       }
     } catch (error) {
-      streamer.printError(`${characterName} glitched: ${(error as Error).message}`);
+      if (this.emitter) {
+        this.emitter.onError(error as Error);
+      } else {
+        streamer.printError(`${characterName} glitched: ${(error as Error).message}`);
+      }
 
       // Add an in-universe glitch message to keep the scene going
       this.recentDialogue.push({
@@ -219,12 +327,24 @@ export class SceneExecutor {
     agent: AgentConfig,
     history: Array<{ role: 'user' | 'assistant'; content: string }>
   ): Promise<string> {
-    streamer.startCharacterTurn(agent.name);
+    const color = getCharacterColor(agent.name);
+
+    // Emit dialogue start
+    if (this.emitter) {
+      this.emitter.onDialogueStart(agent.name, color);
+    } else {
+      streamer.startCharacterTurn(agent.name);
+    }
 
     let fullResponse = '';
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= 2; attempt++) {
+      // Check for abort
+      if (this.isAborted()) {
+        throw new Error('Scene aborted');
+      }
+
       try {
         fullResponse = '';
         const stream = this.client.messages.stream({
@@ -235,21 +355,35 @@ export class SceneExecutor {
         });
 
         for await (const event of stream) {
+          // Check for abort during streaming
+          if (this.isAborted()) {
+            throw new Error('Scene aborted');
+          }
+
           if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
             const text = event.delta.text;
             fullResponse += text;
-            streamer.bufferText(text);
+            if (this.emitter) {
+              this.emitter.onDialogueChunk(text);
+            } else {
+              streamer.bufferText(text);
+            }
           }
         }
 
         return fullResponse;
       } catch (err) {
+        // Re-throw abort errors
+        if ((err as Error).message === 'Scene aborted') {
+          throw err;
+        }
+
         lastError = err;
         const status = (err as any)?.status;
         const isRateLimit = status === 429;
         const delayMs = isRateLimit ? 1000 * (attempt + 1) : 500 * attempt;
 
-        if (this.verbose) {
+        if (this.verbose && !this.emitter) {
           streamer.printError(`[character:${agent.name}] attempt ${attempt + 1} failed: ${(err as Error).message}`);
         }
 
@@ -263,6 +397,11 @@ export class SceneExecutor {
   }
 
   private async getOrchestratorResponse(prompt: string): Promise<string> {
+    // Check for abort
+    if (this.isAborted()) {
+      throw new Error('Scene aborted');
+    }
+
     this.conversationHistory.push({ role: 'user', content: prompt });
 
     // Trim history to max size
@@ -288,7 +427,7 @@ export class SceneExecutor {
 
     this.conversationHistory.push({ role: 'assistant', content: text });
 
-    if (this.verbose) {
+    if (this.verbose && !this.emitter) {
       streamer.printDebug(`Orchestrator: ${text.substring(0, 100)}...`);
     }
 
@@ -303,6 +442,11 @@ export class SceneExecutor {
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
+      // Check for abort
+      if (this.isAborted()) {
+        throw new Error('Scene aborted');
+      }
+
       try {
         return await fn();
       } catch (err) {
@@ -311,7 +455,7 @@ export class SceneExecutor {
         const isRateLimit = status === 429;
         const delayMs = isRateLimit ? 1000 * (attempt + 1) : 500 * attempt;
 
-        if (this.verbose) {
+        if (this.verbose && !this.emitter) {
           streamer.printError(`[${label}] attempt ${attempt + 1} failed: ${(err as Error).message}`);
         }
 
